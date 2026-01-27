@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Vision - City Walk Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root { --google-blue: #4285F4; --google-red: #EA4335; --google-green: #34A853; }
+        body { font-family: 'Google Sans', sans-serif; background-color: #121212; color: white; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow-x: hidden; }
+        #app-container { width: 90%; max-width: 500px; text-align: center; }
+        h1 { font-size: 24px; color: var(--google-blue); }
+        #video-wrapper { position: relative; width: 100%; border-radius: 20px; overflow: hidden; border: 3px solid #333; background: #000; aspect-ratio: 3/4; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        #status-box { margin-top: 20px; padding: 15px; border-radius: 15px; background: #1e1e1e; min-height: 80px; font-size: 1.2em; line-height: 1.5; border: 1px solid #444; }
+        .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; width: 100%; }
+        button { padding: 20px; font-size: 1.5rem; font-weight: bold; border-radius: 12px; border: none; cursor: pointer; transition: 0.2s; }
+        #startBtn { background-color: var(--google-green); color: white; }
+        #stopBtn { background-color: var(--google-red); color: white; }
+        input { padding: 15px; border-radius: 10px; border: 1px solid #444; background: #222; color: white; font-size: 1em; width: 100%; box-sizing: border-box; }
+        canvas { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <h1>City Walk AI 助手</h1>
+    
+    <div id="video-wrapper">
+        <video id="video" autoplay playsinline muted aria-label="即時路況預覽"></video>
+    </div>
+
+    <div id="status-box" id="statusText">請輸入 Gemini API Key 後點擊啟動</div>
+
+    <div class="btn-group">
+        <input type="password" id="apiKey" placeholder="在此貼上您的 Gemini API Key">
+        <button id="startBtn">點擊此處：開啟導覽</button>
+        <button id="stopBtn">點擊此處：停止導覽</button>
+    </div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const statusBox = document.getElementById('status-box');
+    const apiKeyInput = document.getElementById('apiKey');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+
+    let intervalId = null;
+    let isProcessing = false;
+
+    // 自動讀取本地 Key
+    if (localStorage.getItem('gemini_key')) {
+        apiKeyInput.value = localStorage.getItem('gemini_key');
+    }
+
+    function speak(text) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = 'zh-TW';
+        msg.rate = 1.1;
+        window.speechSynthesis.speak(msg);
+    }
+
+    async function startApp() {
+        const key = apiKeyInput.value.trim();
+        if (!key) { speak("請先貼上 API 金鑰"); return; }
+        localStorage.setItem('gemini_key', key);
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment" } 
+            });
+            video.srcObject = stream;
+            speak("導覽已啟動。我會每隔 5 秒為您偵測路況。");
+            intervalId = setInterval(analyzeScene, 5000);
+        } catch (err) {
+            speak("無法開啟相機，請檢查權限。");
+        }
+    }
+
+    async function analyzeScene() {
+        if (isProcessing) return;
+        isProcessing = true;
+        statusBox.innerText = "觀察中...";
+
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0);
+        const base64Img = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKeyInput.value}`;
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [
+                            { text: "你是視障者導航員。描述前方 3 公尺的障礙物與路徑。如果安全，請說'前方路徑安全'。如果有危險（如車輛、坑洞、階梯），請大聲警告並告知避開方向。請控制在 25 字以內。" },
+                            { inline_data: { mime_type: "image/jpeg", data: base64Img } }
+                        ]
+                    }]
+                })
+            });
+            const data = await res.json();
+            const text = data.candidates[0].content.parts[0].text;
+            statusBox.innerText = text;
+            speak(text);
+        } catch (e) {
+            statusBox.innerText = "連線異常";
+        } finally {
+            isProcessing = false;
+        }
+    }
+
+    startBtn.onclick = startApp;
+    stopBtn.onclick = () => {
+        clearInterval(intervalId);
+        if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+        speak("導覽已停止。");
+    };
+</script>
+
+</body>
+</html>
