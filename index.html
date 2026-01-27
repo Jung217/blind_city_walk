@@ -3,39 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini Vision - City Walk Assistant</title>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&display=swap" rel="stylesheet">
+    <title>OpenAI 導覽助手</title>
     <style>
-        :root { --google-blue: #4285F4; --google-red: #EA4335; --google-green: #34A853; }
-        body { font-family: 'Google Sans', sans-serif; background-color: #121212; color: white; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow-x: hidden; }
-        #app-container { width: 90%; max-width: 500px; text-align: center; }
-        h1 { font-size: 24px; color: var(--google-blue); }
-        #video-wrapper { position: relative; width: 100%; border-radius: 20px; overflow: hidden; border: 3px solid #333; background: #000; aspect-ratio: 3/4; }
+        :root { --primary: #10a37f; --danger: #ef4444; --bg: #000000; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: white; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        #app { width: 100%; max-width: 500px; text-align: center; }
+        h1 { color: var(--primary); font-size: 1.5rem; }
+        
+        /* 影片視窗 */
+        #video-container { width: 100%; border-radius: 20px; overflow: hidden; border: 2px solid #333; background: #111; aspect-ratio: 3/4; position: relative; }
         video { width: 100%; height: 100%; object-fit: cover; }
-        #status-box { margin-top: 20px; padding: 15px; border-radius: 15px; background: #1e1e1e; min-height: 80px; font-size: 1.2em; line-height: 1.5; border: 1px solid #444; }
-        .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; width: 100%; }
+        
+        /* 狀態文字區 */
+        #status-box { margin: 20px 0; padding: 20px; border-radius: 15px; background: #1a1a1a; min-height: 100px; font-size: 1.3rem; border: 1px solid #444; display: flex; align-items: center; justify-content: center; }
+        
+        /* 按鈕與輸入 */
+        .controls { width: 100%; display: flex; flex-direction: column; gap: 15px; }
+        input { padding: 15px; border-radius: 10px; border: 1px solid #444; background: #222; color: white; font-size: 1rem; width: 100%; box-sizing: border-box; }
         button { padding: 20px; font-size: 1.5rem; font-weight: bold; border-radius: 12px; border: none; cursor: pointer; transition: 0.2s; }
-        #startBtn { background-color: var(--google-green); color: white; }
-        #stopBtn { background-color: var(--google-red); color: white; }
-        input { padding: 15px; border-radius: 10px; border: 1px solid #444; background: #222; color: white; font-size: 1em; width: 100%; box-sizing: border-box; }
+        #startBtn { background: var(--primary); color: white; }
+        #stopBtn { background: var(--danger); color: white; }
+        
         canvas { display: none; }
     </style>
 </head>
 <body>
 
-<div id="app-container">
-    <h1>City Walk AI 助手</h1>
+<div id="app">
+    <h1>City Walk AI 助手 (OpenAI)</h1>
     
-    <div id="video-wrapper">
-        <video id="video" autoplay playsinline muted aria-label="即時路況預覽"></video>
+    <div id="video-container">
+        <video id="video" autoplay playsinline muted></video>
     </div>
 
-    <div id="status-box" id="statusText">請輸入 Gemini API Key 後點擊啟動</div>
+    <div id="status-box" id="statusText">請輸入 OpenAI API Key 後點擊啟動</div>
 
-    <div class="btn-group">
-        <input type="password" id="apiKey" placeholder="在此貼上您的 Gemini API Key">
-        <button id="startBtn">點擊此處：開啟導覽</button>
-        <button id="stopBtn">點擊此處：停止導覽</button>
+    <div class="controls">
+        <input type="password" id="apiKey" placeholder="在此輸入 OpenAI API Key (sk-...)">
+        <button id="startBtn">啟動導覽</button>
+        <button id="stopBtn">停止導覽</button>
     </div>
 </div>
 
@@ -52,68 +58,100 @@
     let intervalId = null;
     let isProcessing = false;
 
-    // 自動讀取本地 Key
-    if (localStorage.getItem('gemini_key')) {
-        apiKeyInput.value = localStorage.getItem('gemini_key');
+    // 自動讀取儲存的金鑰
+    const savedKey = localStorage.getItem('openai_key');
+    if (savedKey) {
+        apiKeyInput.value = savedKey;
+        statusBox.innerText = "已載入金鑰，請點擊啟動。";
     }
 
     function speak(text) {
         window.speechSynthesis.cancel();
         const msg = new SpeechSynthesisUtterance(text);
         msg.lang = 'zh-TW';
-        msg.rate = 1.1;
+        msg.rate = 1.1; 
         window.speechSynthesis.speak(msg);
     }
 
     async function startApp() {
         const key = apiKeyInput.value.trim();
-        if (!key) { speak("請先貼上 API 金鑰"); return; }
-        localStorage.setItem('gemini_key', key);
+        if (!key.startsWith('sk-')) {
+            speak("API 金鑰格式似乎不正確，請重新檢查。");
+            return;
+        }
+        localStorage.setItem('openai_key', key);
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: "environment" } 
             });
             video.srcObject = stream;
-            speak("導覽已啟動。我會每隔 5 秒為您偵測路況。");
-            intervalId = setInterval(analyzeScene, 5000);
+            statusBox.innerText = "正在連線 AI...";
+            speak("系統已啟動，開始為您導航。");
+            
+            // 每 6 秒辨識一次，GPT-4o 辨識較深，這頻率能維持較好體驗
+            intervalId = setInterval(analyzeScene, 6000);
         } catch (err) {
-            speak("無法開啟相機，請檢查權限。");
+            console.error(err);
+            speak("無法開啟相機，請確保網址為 HTTPS 並已授權權限。");
         }
     }
 
     async function analyzeScene() {
         if (isProcessing) return;
         isProcessing = true;
-        statusBox.innerText = "觀察中...";
+        statusBox.innerText = "掃描中...";
 
+        // 截圖
         const context = canvas.getContext('2d');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0);
-        const base64Img = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+        const base64Img = canvas.toDataURL('image/jpeg', 0.6); // 稍微壓縮降低流量
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKeyInput.value}`;
+        const apiKey = apiKeyInput.value.trim();
 
         try {
-            const res = await fetch(url, {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
                 body: JSON.stringify({
-                    contents: [{
-                        parts: [
-                            { text: "你是視障者導航員。描述前方 3 公尺的障礙物與路徑。如果安全，請說'前方路徑安全'。如果有危險（如車輛、坑洞、階梯），請大聲警告並告知避開方向。請控制在 25 字以內。" },
-                            { inline_data: { mime_type: "image/jpeg", data: base64Img } }
-                        ]
-                    }]
+                    model: "gpt-4o",
+                    messages: [
+                        {
+                            role: "user",
+                            content: [
+                                { type: "text", text: "你是一位視障者的眼睛。請看這張照片，描述前方 3 公尺內的關鍵障礙物（如：階梯、電線桿、車、行人）。如果路徑安全，請說'前方安全，請直走'。如果有危險請明確指出方向。請用一句話概括，不超過 25 個字。" },
+                                { type: "image_url", image_url: { url: base64Img } }
+                            ]
+                        }
+                    ],
+                    max_tokens: 100
                 })
             });
-            const data = await res.json();
-            const text = data.candidates[0].content.parts[0].text;
-            statusBox.innerText = text;
-            speak(text);
+
+            const data = await response.json();
+
+            if (response.status === 200) {
+                const result = data.choices[0].message.content;
+                statusBox.innerText = result;
+                speak(result);
+            } else {
+                // OpenAI 錯誤處理
+                let errorDesc = "連線異常";
+                if (response.status === 401) errorDesc = "金鑰無效，請檢查輸入是否正確。";
+                else if (response.status === 429) errorDesc = "額度已用完或請求太頻繁。";
+                else if (data.error) errorDesc = data.error.message;
+
+                statusBox.innerText = "錯誤: " + response.status;
+                speak(errorDesc);
+            }
         } catch (e) {
-            statusBox.innerText = "連線異常";
+            statusBox.innerText = "網路連線失敗";
+            speak("網路連線失敗，請檢查網路。");
         } finally {
             isProcessing = false;
         }
@@ -122,7 +160,10 @@
     startBtn.onclick = startApp;
     stopBtn.onclick = () => {
         clearInterval(intervalId);
-        if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+        }
+        statusBox.innerText = "已停止導覽";
         speak("導覽已停止。");
     };
 </script>
